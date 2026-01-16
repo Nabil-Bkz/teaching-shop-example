@@ -2,6 +2,7 @@ from django.contrib.auth.models import User
 from django.db import models
 
 
+# Product model for the e-commerce application
 class Product(models.Model):
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100)
