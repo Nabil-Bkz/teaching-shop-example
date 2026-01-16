@@ -1,0 +1,61 @@
+name: Check Migration Conflicts
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+
+jobs:
+  check-migrations:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge main into PR branch (simulate merge)
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git fetch origin main
+          git merge origin/main --no-edit || {
+            echo "::error::Git merge conflict detected. Please resolve conflicts first."
+            exit 1
+          }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync
+
+      - name: Check for migration conflicts
+        working-directory: backend/core
+        run: |
+          # Check if Django detects migration conflicts
+          uv run python manage.py makemigrations --check --dry-run 2>&1 | tee migration_output.txt
+
+          if grep -q "Conflicting migrations detected" migration_output.txt; then
+            echo ""
+            echo "::error::Migration conflicts detected! Multiple migrations have the same dependency."
+            echo ""
+            echo "To fix migration conflicts:"
+            echo "1. Pull the latest main branch: git pull origin main"
+            echo "2. Run: cd backend/core && uv run python manage.py makemigrations --merge"
+            echo "3. Commit the merge migration"
+            exit 1
+          fi
+
+          # Try to apply migrations to verify they work
+          uv run python manage.py migrate --run-syncdb
+
+          echo "✅ No migration conflicts detected"
